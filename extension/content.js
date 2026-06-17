@@ -32,6 +32,7 @@
   let lastSignature = "";
   let lastUrl = location.href;
   let capturing = false;
+  let progressTimer = null;
 
   function collectMessages() {
     const found = [];
@@ -70,20 +71,25 @@
 
   async function capture(reason) {
     if (capturing) return;
+    setProgress(22, reason === "auto" ? "Auto scan: reading page" : "Manual scan: reading page", "working");
     const messages = collectMessages();
     const quality = captureQuality(messages);
     updateCounts(quality);
     if (!quality.ok) {
-      if (reason === "manual") setStatus(`Too little content ${quality.userCount}/${quality.assistantCount}`, "error");
+      setProgress(100, `Skipped: ${quality.mode}`, reason === "manual" ? "error" : "neutral");
       return;
     }
 
     const signature = localSignature(messages);
-    if (signature === lastSignature && reason === "auto") return;
+    if (signature === lastSignature && reason === "auto") {
+      setProgress(100, "No new page changes", "neutral");
+      return;
+    }
     lastSignature = signature;
     capturing = true;
-    setStatus(reason === "auto" ? "Auto analyzing..." : "Analyzing...", "working");
+    setProgress(48, `Read ${quality.chars} chars`, "working");
     try {
+      setProgress(72, "Analyzing idea value", "working");
       const result = await AIWorkstream.ingest({
         platform,
         title: document.title,
@@ -92,11 +98,11 @@
         captureQuality: quality
       });
       await refreshMiniStats();
-      if (result.duplicate) setStatus("Already saved", "neutral");
-      else if (result.saved) setStatus(`Idea saved ${result.analysis.score}`, "success");
-      else setStatus(`Ignored ${result.analysis.score}`, "neutral");
+      if (result.duplicate) setProgress(100, "Already saved", "neutral");
+      else if (result.saved) setProgress(100, `Idea saved ${result.analysis.score}`, "success");
+      else setProgress(100, `Ignored ${result.analysis.score}`, "neutral");
     } catch (error) {
-      setStatus("Analyze failed", "error");
+      setProgress(100, "Analyze failed", "error");
     } finally {
       capturing = false;
     }
@@ -110,14 +116,35 @@
       lastSignature = "";
     }
     clearTimeout(timer);
+    showCountdown(AUTO_CAPTURE_DELAY_MS);
     timer = setTimeout(() => capture("auto"), AUTO_CAPTURE_DELAY_MS);
   }
 
-  function setStatus(text, state) {
+  function setProgress(percent, text, state) {
     const status = document.querySelector("#ai-workstream-capture .aw-status");
-    if (!status) return;
-    status.textContent = text;
-    status.dataset.state = state;
+    const fill = document.querySelector("#ai-workstream-capture .aw-progress-fill");
+    if (status) {
+      status.textContent = text;
+      status.dataset.state = state;
+    }
+    if (fill) fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    clearTimeout(progressTimer);
+    if (percent >= 100 && state !== "working") {
+      progressTimer = setTimeout(() => {
+        const nextStatus = document.querySelector("#ai-workstream-capture .aw-status");
+        const nextFill = document.querySelector("#ai-workstream-capture .aw-progress-fill");
+        if (nextStatus) {
+          nextStatus.textContent = "Watching for page changes";
+          nextStatus.dataset.state = "neutral";
+        }
+        if (nextFill) nextFill.style.width = "0%";
+      }, 4500);
+    }
+  }
+
+  function showCountdown(delayMs) {
+    const seconds = Math.round(delayMs / 1000);
+    setProgress(8, `Page changed. Scanning in ${seconds}s`, "working");
   }
 
   function updateCounts(quality) {
@@ -154,7 +181,8 @@
           </div>
           <button class="aw-hide" type="button" title="Hide">×</button>
         </div>
-        <div class="aw-status" data-state="neutral">Waiting for page updates</div>
+        <div class="aw-status" data-state="neutral">Watching for page changes</div>
+        <div class="aw-progress"><i class="aw-progress-fill"></i></div>
         <div class="aw-grid">
           <div><b class="aw-ideas">0</b><span>Ideas</span></div>
           <div><b class="aw-hot">0</b><span>Hot</span></div>
