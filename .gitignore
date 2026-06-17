@@ -1,0 +1,4 @@
+outputs/
+work/
+*.log
+node_modules/

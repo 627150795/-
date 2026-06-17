@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI Workstream",
   "version": "0.1.0",
-  "description": "Turn AI conversations into projects, tasks, decisions, and blockers.",
+  "description": "Capture AI web chats and turn promising ideas into a lightweight attention map.",
   "permissions": ["storage", "alarms", "notifications"],
   "host_permissions": [
     "https://chatgpt.com/*",
