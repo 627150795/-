@@ -145,6 +145,7 @@
 }
 
 #ai-workstream-capture .aw-primary,
+#ai-workstream-capture .aw-backfill,
 #ai-workstream-capture .aw-secondary {
   width: 100%;
   border: 0;
@@ -165,4 +166,11 @@
   border: 1px solid #dfd8c8;
   background: #fffdf8;
   color: #415046;
+}
+
+#ai-workstream-capture .aw-backfill {
+  margin-top: 8px;
+  border: 1px solid #d8c8a8;
+  background: #f5ead2;
+  color: #75511d;
 }

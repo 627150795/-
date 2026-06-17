@@ -33,6 +33,7 @@
   let lastUrl = location.href;
   let capturing = false;
   let progressTimer = null;
+  let backfilling = false;
 
   function collectMessages() {
     const found = [];
@@ -106,6 +107,130 @@
     } finally {
       capturing = false;
     }
+  }
+
+  async function backfillRecent(limit = 20) {
+    if (platform !== "ChatGPT") {
+      setProgress(100, "Backfill only supports ChatGPT now", "error");
+      return;
+    }
+    if (backfilling) return;
+    backfilling = true;
+    try {
+      setProgress(8, "Loading recent chat history", "working");
+      const metas = await fetchRecentChatGPTMetas(limit);
+      if (!metas.length) {
+        setProgress(100, "No history found", "neutral");
+        return;
+      }
+      let saved = 0;
+      let scanned = 0;
+      for (const meta of metas) {
+        scanned += 1;
+        setProgress(Math.round((scanned / metas.length) * 80) + 10, `Backfill ${scanned}/${metas.length}`, "working");
+        const conversation = await fetchChatGPTConversation(meta.id);
+        if (!conversation.messages.length) continue;
+        const result = await AIWorkstream.ingest({
+          platform: "ChatGPT",
+          title: conversation.title || meta.title || "ChatGPT history",
+          url: `https://chatgpt.com/c/${meta.id}`,
+          messages: conversation.messages,
+          captureQuality: {
+            ok: true,
+            userCount: conversation.messages.filter((m) => m.role === "user").length,
+            assistantCount: conversation.messages.filter((m) => m.role === "assistant").length,
+            chars: conversation.messages.reduce((sum, m) => sum + m.text.length, 0),
+            mode: "history-api"
+          }
+        });
+        if (result.saved) saved += 1;
+      }
+      await refreshMiniStats();
+      setProgress(100, `Backfill done: ${saved}/${metas.length} ideas`, saved ? "success" : "neutral");
+    } catch (error) {
+      setProgress(100, "Backfill failed", "error");
+    } finally {
+      backfilling = false;
+    }
+  }
+
+  async function fetchRecentChatGPTMetas(limit) {
+    const response = await fetch(`https://chatgpt.com/backend-api/conversations?offset=0&limit=${limit}&order=updated`, {
+      credentials: "include"
+    });
+    if (!response.ok) throw new Error(`History API ${response.status}`);
+    const data = await response.json();
+    return (Array.isArray(data.items) ? data.items : [])
+      .map((item) => ({
+        id: String(item.id || item.conversation_id || "").trim(),
+        title: String(item.title || "Untitled Chat").trim(),
+        updatedAt: item.update_time || item.updated_at || null
+      }))
+      .filter((item) => item.id);
+  }
+
+  async function fetchChatGPTConversation(id) {
+    const response = await fetch(`https://chatgpt.com/backend-api/conversation/${id}`, {
+      credentials: "include"
+    });
+    if (!response.ok) throw new Error(`Conversation API ${response.status}`);
+    const raw = await response.json();
+    return normalizeChatGPTConversation(raw, id);
+  }
+
+  function normalizeChatGPTConversation(raw, fallbackId) {
+    const mapping = raw?.mapping && typeof raw.mapping === "object" ? raw.mapping : {};
+    const nodes = Object.values(mapping);
+    const idSet = new Set(Object.keys(mapping));
+    const roots = nodes.filter((node) => !node?.parent || !idSet.has(node.parent));
+    const visited = new Set();
+    const messages = [];
+
+    function walk(node) {
+      if (!node || visited.has(node.id)) return;
+      visited.add(node.id);
+      const message = normalizeChatGPTMessage(node);
+      if (message) messages.push(message);
+      const children = Array.isArray(node.children) ? node.children : [];
+      const lastChild = children[children.length - 1];
+      if (lastChild && mapping[lastChild]) walk(mapping[lastChild]);
+    }
+
+    roots.forEach(walk);
+    return {
+      id: String(raw?.id || raw?.conversation_id || fallbackId),
+      title: String(raw?.title || "Untitled Chat"),
+      messages
+    };
+  }
+
+  function normalizeChatGPTMessage(node) {
+    const raw = node?.message;
+    if (!raw) return null;
+    const role = String(raw.author?.role || "");
+    if (!["user", "assistant"].includes(role)) return null;
+    const text = extractChatGPTText(raw.content);
+    if (!text) return null;
+    return { role, text };
+  }
+
+  function extractChatGPTText(content) {
+    if (!content) return "";
+    if (typeof content === "string") return content.trim();
+    if (content.content_type === "text") {
+      return (Array.isArray(content.parts) ? content.parts : [])
+        .map((part) => typeof part === "string" ? part : part?.text || "")
+        .join("")
+        .trim();
+    }
+    if (content.content_type === "multimodal_text") {
+      return (Array.isArray(content.parts) ? content.parts : [])
+        .map((part) => typeof part === "string" ? part : "")
+        .join("")
+        .trim();
+    }
+    if (content.content_type === "code") return String(content.text || "").trim();
+    return "";
   }
 
   async function scheduleAutoCapture() {
@@ -189,12 +314,14 @@
         </div>
         <div class="aw-page-count">0 user / 0 AI</div>
         <button class="aw-primary" type="button">Analyze this chat</button>
+        <button class="aw-backfill" type="button">Backfill recent 20</button>
         <button class="aw-secondary" type="button">Open idea map</button>
       </section>
     `;
     shell.querySelector(".aw-tab").addEventListener("click", () => shell.classList.remove("aw-collapsed"));
     shell.querySelector(".aw-hide").addEventListener("click", () => shell.classList.add("aw-collapsed"));
     shell.querySelector(".aw-primary").addEventListener("click", () => capture("manual"));
+    shell.querySelector(".aw-backfill").addEventListener("click", () => backfillRecent(20));
     shell.querySelector(".aw-secondary").addEventListener("click", openDashboard);
     document.body.appendChild(shell);
     refreshMiniStats();
