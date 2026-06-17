@@ -1,0 +1,8 @@
+* { box-sizing: border-box; }
+body { width: 330px; margin: 0; background: #f4f0e6; color: #182019; font: 14px/1.5 Inter, system-ui, sans-serif; }
+main { padding: 22px; }
+.eyebrow { color: #8b5d23; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+h1 { margin: 6px 0 8px; font: 700 25px/1.1 Georgia, serif; }
+p { color: #59615a; min-height: 42px; }
+button { width: 100%; border: 0; border-radius: 10px; background: #183f2d; color: white; padding: 11px; font-weight: 700; cursor: pointer; }
+small { display: block; margin-top: 13px; color: #737970; }

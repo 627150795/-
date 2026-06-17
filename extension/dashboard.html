@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Workstream</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <aside>
+    <div class="brand"><span>AW</span><strong>AI Workstream</strong></div>
+    <nav>
+      <button class="nav-item active">想法星图</button>
+      <button class="nav-item">近期对话</button>
+      <button class="nav-item">筛选规则</button>
+    </nav>
+    <div class="aside-note">
+      <b>本地优先</b>
+      <span>默认只保存筛选后的想法摘要。</span>
+    </div>
+  </aside>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">AI IDEA ATTENTION MAP</div>
+        <h1>把快被遗忘的想法捞回来。</h1>
+      </div>
+      <div class="header-actions">
+        <button id="toggle-auto" class="secondary"></button>
+        <button id="toggle-model" class="secondary"></button>
+        <button id="seed-demo" class="secondary">演示数据</button>
+        <button id="clear-data" class="secondary">清空</button>
+      </div>
+    </header>
+
+    <section id="stats" class="stats"></section>
+    <section class="layout">
+      <div class="panel map-panel">
+        <div class="panel-head">
+          <h2>近期想法球</h2>
+          <span>越大表示越值得继续关注；长期不触碰会缩小。</span>
+        </div>
+        <div id="idea-map" class="idea-map"></div>
+      </div>
+      <div class="panel detail-panel">
+        <div class="panel-head">
+          <h2>想法详情</h2>
+          <span>点击一个球查看判断依据</span>
+        </div>
+        <div id="idea-detail" class="empty">还没有选中想法。</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>最新收录</h2>
+        <span>自动采集后会出现在这里</span>
+      </div>
+      <div id="recent-list"></div>
+    </section>
+  </main>
+  <script src="shared.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
