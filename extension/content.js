@@ -3,13 +3,17 @@
     : location.hostname.includes("gemini") ? "Gemini"
       : "Claude";
 
-  const AUTO_CAPTURE_DELAY_MS = 12000;
+  const AUTO_CAPTURE_DELAY_MS = 8000;
   const MIN_MESSAGES = 2;
 
   const selectors = {
     ChatGPT: [
       { selector: '[data-message-author-role="user"]', role: "user" },
-      { selector: '[data-message-author-role="assistant"]', role: "assistant" }
+      { selector: '[data-message-author-role="assistant"]', role: "assistant" },
+      { selector: '[data-testid^="conversation-turn-"]', role: "assistant" },
+      { selector: "article", role: "assistant" },
+      { selector: ".markdown", role: "assistant" },
+      { selector: ".prose", role: "assistant" }
     ],
     Gemini: [
       { selector: "user-query", role: "user" },
@@ -49,11 +53,14 @@
     const userCount = messages.filter((m) => m.role === "user").length;
     const assistantCount = messages.filter((m) => m.role === "assistant").length;
     const chars = messages.reduce((sum, m) => sum + m.text.length, 0);
+    const hasConversationPair = messages.length >= MIN_MESSAGES && userCount >= 1 && assistantCount >= 1 && chars >= 80;
+    const hasLongVisibleAnswer = assistantCount >= 1 && chars >= 450;
     return {
-      ok: messages.length >= MIN_MESSAGES && userCount >= 1 && assistantCount >= 1 && chars >= 80,
+      ok: hasConversationPair || hasLongVisibleAnswer,
       userCount,
       assistantCount,
-      chars
+      chars,
+      mode: hasConversationPair ? "paired" : hasLongVisibleAnswer ? "visible-answer" : "too-small"
     };
   }
 
@@ -173,5 +180,6 @@
   window.addEventListener("visibilitychange", () => {
     if (!document.hidden) scheduleAutoCapture();
   });
-  setTimeout(scheduleAutoCapture, 3000);
+  setTimeout(() => capture("auto"), 2500);
+  setTimeout(scheduleAutoCapture, 9000);
 })();
