@@ -4,6 +4,7 @@
       : "Claude";
 
   const AUTO_CAPTURE_DELAY_MS = 8000;
+  const AUTO_CAPTURE_MAX_WAIT_MS = 18000;
   const MIN_MESSAGES = 2;
 
   const selectors = {
@@ -29,6 +30,7 @@
   };
 
   let timer = null;
+  let firstMutationAt = 0;
   let lastSignature = "";
   let lastUrl = location.href;
   let capturing = false;
@@ -106,6 +108,7 @@
       setProgress(100, "Analyze failed", "error");
     } finally {
       capturing = false;
+      firstMutationAt = 0;
     }
   }
 
@@ -251,9 +254,26 @@
     if (lastUrl !== location.href) {
       lastUrl = location.href;
       lastSignature = "";
+      firstMutationAt = 0;
     }
+
+    const messages = collectMessages();
+    const quality = captureQuality(messages);
+    updateCounts(quality);
+
+    const now = Date.now();
+    if (!firstMutationAt) firstMutationAt = now;
+    const elapsed = now - firstMutationAt;
+
     clearTimeout(timer);
-    showCountdown(AUTO_CAPTURE_DELAY_MS);
+    if (elapsed >= AUTO_CAPTURE_MAX_WAIT_MS) {
+      setProgress(18, "Max wait reached. Scanning now", "working");
+      firstMutationAt = 0;
+      capture("auto");
+      return;
+    }
+
+    showCountdown(AUTO_CAPTURE_DELAY_MS, quality);
     timer = setTimeout(() => capture("auto"), AUTO_CAPTURE_DELAY_MS);
   }
 
@@ -279,9 +299,10 @@
     }
   }
 
-  function showCountdown(delayMs) {
+  function showCountdown(delayMs, quality) {
     const seconds = Math.round(delayMs / 1000);
-    setProgress(8, `Page changed. Scanning in ${seconds}s`, "working");
+    const counts = quality ? ` · ${quality.userCount} user / ${quality.assistantCount} AI` : "";
+    setProgress(8, `Waiting for page to settle: ${seconds}s${counts}`, "working");
   }
 
   function updateCounts(quality) {
