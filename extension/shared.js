@@ -4,7 +4,7 @@
   const EMPTY_STATE = {
     conversations: [],
     ideas: [],
-    settings: { autoCapture: true, useModelAnalyzer: true, minScore: 55 }
+    settings: { autoCapture: true, useModelAnalyzer: true, minScore: 78, backfillMinScore: 84 }
   };
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -44,43 +44,57 @@
     return normalized;
   }
 
+  function userOwnedSignal(userText) {
+    return /我(现在)?有个想法|我想做|我在想|我的需求|我希望|我打算|能不能做(一个|个)?|可不可以做|这个产品|这个工具|这个应用|这个软件|这个插件/.test(userText);
+  }
+
+  function actionableSignal(text) {
+    return /MVP|原型|验证|落地|推进|下一步|持续|跟进|提醒|自动|采集|筛选|可视化|项目|产品|插件|工具|app|应用|用户|市场|竞品|商业|写作计划|研究计划|学习计划|个人系统/.test(text);
+  }
+
+  function noiseSignal(userText, allText) {
+    return /^(帮我)?(翻译|润色|改写|解释|总结|检查|优化|修复|生成|写一段|列一下)/.test(userText)
+      || /验收标准|报错|语法错误|安装包|怎么安装|在哪里打开|打包扩展程序|命令行|截图|帮我看看这段|解释一下|这是什么意思/.test(userText)
+      || /天气|汇率|附近|路线|菜谱|笑话|翻译|润色|格式化/.test(allText);
+  }
+
   function roughScore(messages) {
     const text = compact(messages.map((m) => `${m.role}: ${m.text}`).join("\n"));
     const userText = compact(messages.filter((m) => m.role === "user").map((m) => m.text).join("\n"));
-    const positive = [
-      /我(现在)?有个想法|我想做|我在想|我觉得|我的需求|能不能做|可不可行|怎么落地|怎么验证/g,
-      /产品|创业|工具|app|插件|自动化|工作流|MVP|原型|商业|推广|用户|竞品|市场/g,
-      /研究|写作|选题|课程|学习计划|投资假设|个人系统|知识库/g,
-      /下一步|需要验证|值得跟进|还没解决|阻塞|风险|方案|架构/g
-    ];
-    const negative = [
-      /翻译|润色|改写|格式化|总结这段|讲个笑话|附近|天气|汇率|怎么做菜/g,
-      /^(帮我)?(翻译|润色|改写|解释)一下/g
-    ];
-    let score = Math.min(30, Math.floor(text.length / 120));
-    positive.forEach((pattern) => { score += ((text.match(pattern) || []).length * 10); });
-    negative.forEach((pattern) => { score -= ((userText.match(pattern) || []).length * 18); });
-    if (/我.*想法|我想做|我的需求|能不能做/.test(userText)) score += 18;
-    if (/采集|筛选|可视化|MVP|插件|产品/.test(text)) score += 12;
-    if (messages.filter((m) => m.role === "user").length >= 3) score += 12;
+    if (!userText || noiseSignal(userText, text)) return Math.min(40, Math.floor(text.length / 240));
+
+    let score = 20;
+    if (userOwnedSignal(userText)) score += 35;
+    if (actionableSignal(text)) score += 25;
+    if (/还没解决|阻塞|风险|方案|架构|需要验证|值得跟进|长期|持续/.test(text)) score += 10;
+    if (messages.filter((m) => m.role === "user").length >= 3) score += 6;
+    score += Math.min(8, Math.floor(text.length / 600));
     return Math.max(0, Math.min(100, score));
   }
 
   function fallbackAnalyze(payload) {
     const messages = payload.messages;
-    const score = roughScore(messages);
+    const text = compact(messages.map((m) => `${m.role}: ${m.text}`).join("\n"));
     const userText = compact(messages.filter((m) => m.role === "user").map((m) => m.text).join(" "));
+    const score = roughScore(messages);
+    const owned = userOwnedSignal(userText);
+    const actionable = actionableSignal(text);
+    const noisy = noiseSignal(userText, text);
     const title = makeTitle(payload.title, userText);
-    const shouldSave = score >= 55;
+    const shouldSave = owned && actionable && !noisy && score >= 78;
     return {
       should_save: shouldSave,
       idea_title: shouldSave ? title : null,
       summary: shouldSave ? compact(userText).slice(0, 90) : null,
       idea_type: inferType(userText),
       score,
-      why_saved: shouldSave ? ["有想法探索信号", "有后续跟进价值"] : [],
+      is_user_owned_idea: owned,
+      is_actionable: actionable,
+      is_noise: noisy,
+      noise_type: noisy ? "one_off_or_tooling" : null,
+      why_saved: shouldSave ? ["用户明确提出自己的点子", "有后续推进或验证价值"] : [],
       next_step: shouldSave ? "继续观察这个点子是否被再次推进。" : null,
-      noise_reason: shouldSave ? null : "更像一次性问题或工具请求"
+      noise_reason: shouldSave ? null : "缺少用户自有点子、后续推进价值，或更像一次性工具请求"
     };
   }
 
@@ -152,6 +166,22 @@
     return source.slice(0, 28);
   }
 
+  function passesIdeaGate(analysis, settings, payload, messages) {
+    if (!analysis?.should_save) return false;
+    if (analysis.is_noise === true || analysis.noise_type) return false;
+    if (analysis.is_user_owned_idea === false) return false;
+    if (analysis.is_actionable === false) return false;
+    if (!compact(analysis.idea_title) || !compact(analysis.summary)) return false;
+
+    const text = compact(messages.map((m) => `${m.role}: ${m.text}`).join("\n"));
+    const userText = compact(messages.filter((m) => m.role === "user").map((m) => m.text).join(" "));
+    if (noiseSignal(userText, text)) return false;
+
+    const isBackfill = payload.captureQuality?.mode === "history-api";
+    const threshold = isBackfill ? (settings.backfillMinScore || 84) : (settings.minScore || 78);
+    return Number(analysis.score || 0) >= threshold;
+  }
+
   async function ingest(payload) {
     const state = await getState();
     const messages = payload.messages
@@ -174,7 +204,7 @@
 
     const analysis = await modelAnalyze({ ...payload, messages }, state.settings);
     let saved = false;
-    if (analysis.should_save && analysis.score >= state.settings.minScore) {
+    if (passesIdeaGate(analysis, state.settings, payload, messages)) {
       const title = compact(analysis.idea_title) || makeTitle(payload.title, messages.map((m) => m.text).join(" "));
       const existing = state.ideas.find((idea) => similarIdea(idea.title, title));
       const isProgressing = progressSignal(messages) || analysis.progress_signal === true;
