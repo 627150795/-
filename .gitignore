@@ -2,3 +2,5 @@ outputs/
 work/
 *.log
 node_modules/
+.env
+.env.*

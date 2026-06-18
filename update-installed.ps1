@@ -10,6 +10,10 @@ Copy-Item -LiteralPath (Join-Path $Root "extension") -Destination $Install -Recu
 Copy-Item -LiteralPath (Join-Path $Root "README.md") -Destination $Install -Force
 Copy-Item -LiteralPath (Join-Path $Root "analyzer-server.js") -Destination $Install -Force
 Copy-Item -LiteralPath (Join-Path $Root "start-analyzer.ps1") -Destination $Install -Force
+$EnvFile = Join-Path $Root ".env"
+if (Test-Path $EnvFile) {
+  Copy-Item -LiteralPath $EnvFile -Destination $Install -Force
+}
 
 $Node = "C:\Users\adam\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
 if (-not (Test-Path $Node)) { $Node = "node" }

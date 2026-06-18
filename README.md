@@ -1,56 +1,54 @@
 # AI Workstream MVP
 
-一个桌面浏览器扩展 MVP：自动采集 ChatGPT、Gemini、Claude 网页里已加载的近期聊天，筛选出值得未来继续关注的想法，并在网页看板里用“想法球”展示注意力热度。
+桌面浏览器扩展 MVP：自动采集 ChatGPT、Gemini、Claude 网页里的对话，筛选出值得未来继续关注的想法，并用“想法球”展示注意力热度。
 
-## 它验证什么
+## 当前能力
 
-- 网页端自动采集可行。
-- 关键词/规则可以做粗筛。
-- 硅基流动等第三方小模型可以做语义筛选和结构化输出。
-- 想法可以按分数和时间衰减显示成可视化面板。
+- ChatGPT 页面会自动分析当前打开的对话。
+- ChatGPT 页面加载后会自动补扫最近 20 条历史会话。
+- 自动补扫默认每 10 分钟执行一次，并带跨标签页锁，避免重复扫描。
+- 小模型可用时走硅基流动筛选；不可用时退回本地规则。
+- 本地只保存想法摘要、分数、判断理由、下一步提示和来源数量。
+- 数据保存在 `chrome.storage.local`。
 
 ## 安装扩展
 
-1. 打开 `chrome://extensions` 或 `edge://extensions`。
+1. 打开 `chrome://extensions`。
 2. 开启“开发者模式”。
 3. 点击“加载已解压的扩展程序”。
-4. 选择本仓库的 `extension` 文件夹。
-5. 打开 ChatGPT 或 Gemini 网页对话，保持页面开着即可自动分析；也可以点右下角“分析当前对话”。
-6. 点击扩展图标，打开“想法星图”。
+4. 选择 `C:\Users\adam\Documents\Codex\AIWorkstreamMVP\extension`。
+5. 每次同步更新后，在扩展页点击 AI Workstream 的刷新按钮。
 
-## 启动小模型分析代理
+## 启动分析服务
 
-没有 API Key 时也能跑，会自动退回本地规则。
+没有 API key 时也能跑，但会退回本地规则。
 
 ```powershell
 .\start-analyzer.ps1
 ```
 
-使用硅基流动时：
+本机 `.env` 支持：
 
-```powershell
-$env:SILICONFLOW_API_KEY="你的 key"
-$env:SILICONFLOW_MODEL="Qwen/Qwen2.5-7B-Instruct"
-.\start-analyzer.ps1
+```text
+SILICONFLOW_API_KEY=你的 key
+SILICONFLOW_MODEL=deepseek-ai/DeepSeek-V4-Flash
 ```
 
-扩展会调用：
+扩展调用：
 
 ```text
 http://127.0.0.1:8787/analyze
 ```
 
-## 当前行为
+健康检查：
 
-- 自动采集开关默认开启。
-- 自动采集会在页面变化停止约 45 秒后触发，避免 AI 回答还没结束就分析。
-- 小模型代理可用时走模型筛选；不可用时走本地规则。
-- 默认只保存“想法摘要、分数、判断理由、下一步提示、来源数量”，不上传完整对话到云端。
-- 数据保存在 `chrome.storage.local`。
+```text
+http://127.0.0.1:8787/health
+```
 
-## 仍然不解决什么
+## 仍然不解决
 
 - 不能采集手机官方 App。
-- 浏览器关闭、标签页关闭、页面休眠时不能继续采集。
+- 浏览器完全关闭、标签页关闭、页面休眠时不能继续采集。
 - ChatGPT/Gemini 改页面结构时，选择器可能需要维护。
-- 当前小模型只做筛选和摘要，不做长期记忆或云同步。
+- 当前只做本地 MVP，不做云同步和跨设备推送。
