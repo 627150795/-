@@ -5,6 +5,7 @@
 
   const AUTO_CAPTURE_DELAY_MS = 8000;
   const AUTO_CAPTURE_MAX_WAIT_MS = 18000;
+  const CAPTURE_VERSION = "0.1.1";
   const MIN_MESSAGES = 2;
 
   const selectors = {
@@ -37,6 +38,7 @@
   let activityTimer = null;
   let backfilling = false;
   let stoppedForReload = false;
+  let collectorMode = "generic";
 
   function shouldStopForExtensionReload() {
     return stoppedForReload || AIWorkstream.isExtensionContextInvalid?.() === true;
@@ -51,6 +53,7 @@
   function collectMessages() {
     if (platform === "ChatGPT") return collectChatGPTMessages();
 
+    collectorMode = "generic";
     const found = [];
     selectors[platform].forEach(({ selector, role }) => {
       document.querySelectorAll(selector).forEach((element) => {
@@ -78,7 +81,11 @@
       .filter((item, index, all) => index === 0 || item.role !== all[index - 1].role || item.text !== all[index - 1].text)
       .map(({ role, text }) => ({ role, text }));
 
-    if (roleMessages.length) return roleMessages;
+    if (roleMessages.length) {
+      collectorMode = "role";
+      return roleMessages;
+    }
+    collectorMode = "fallback";
     return collectChatGPTFallbackMessages();
   }
 
@@ -372,7 +379,7 @@
 
   function updateCounts(quality) {
     const node = document.querySelector("#ai-workstream-capture .aw-page-count");
-    if (node) node.textContent = `${quality.userCount} user / ${quality.assistantCount} AI`;
+    if (node) node.textContent = `${quality.userCount} user / ${quality.assistantCount} AI · ${collectorMode}`;
   }
 
   async function refreshMiniStats() {
@@ -400,7 +407,7 @@
         <div class="aw-head">
           <div>
             <strong>AI Workstream</strong>
-            <span>${platform} capture</span>
+            <span>${platform} capture · v${CAPTURE_VERSION}</span>
           </div>
           <button class="aw-hide" type="button" title="Hide">x</button>
         </div>
