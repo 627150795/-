@@ -36,6 +36,17 @@
   let capturing = false;
   let activityTimer = null;
   let backfilling = false;
+  let stoppedForReload = false;
+
+  function shouldStopForExtensionReload() {
+    return stoppedForReload || AIWorkstream.isExtensionContextInvalid?.() === true;
+  }
+
+  function stopForExtensionReload() {
+    stoppedForReload = true;
+    clearTimeout(timer);
+    setProgress(100, "Extension reloaded. Refresh this page", "error");
+  }
 
   function collectMessages() {
     const found = [];
@@ -73,6 +84,10 @@
   }
 
   async function capture(reason) {
+    if (shouldStopForExtensionReload()) {
+      stopForExtensionReload();
+      return;
+    }
     if (capturing) return;
     setProgress(22, reason === "auto" ? "Auto scan: reading page" : "Manual scan: reading page", "working");
     const messages = collectMessages();
@@ -105,6 +120,10 @@
       else if (result.saved) setProgress(100, `Idea saved ${result.analysis.score}`, "success");
       else setProgress(100, `Ignored ${result.analysis.score}`, "neutral");
     } catch (error) {
+      if (/Extension context invalidated/i.test(String(error?.message || error || ""))) {
+        stopForExtensionReload();
+        return;
+      }
       setProgress(100, "Analyze failed", "error");
     } finally {
       capturing = false;
@@ -113,6 +132,10 @@
   }
 
   async function backfillRecent(limit = 20) {
+    if (shouldStopForExtensionReload()) {
+      stopForExtensionReload();
+      return;
+    }
     setProgress(0, "Backfill requested", "working");
     if (platform !== "ChatGPT") {
       setProgress(100, "Backfill only supports ChatGPT now", "error");
@@ -249,7 +272,15 @@
   }
 
   async function scheduleAutoCapture() {
+    if (shouldStopForExtensionReload()) {
+      stopForExtensionReload();
+      return;
+    }
     const state = await AIWorkstream.getState();
+    if (shouldStopForExtensionReload()) {
+      stopForExtensionReload();
+      return;
+    }
     if (!state.settings.autoCapture) return;
     if (lastUrl !== location.href) {
       lastUrl = location.href;

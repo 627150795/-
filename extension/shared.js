@@ -11,6 +11,7 @@
   const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const compact = (text) => String(text || "").replace(/\s+/g, " ").trim();
   const isExtensionContextError = (error) => /Extension context invalidated/i.test(String(error?.message || error || ""));
+  let extensionContextInvalid = false;
   const fingerprint = (text) => {
     const source = compact(text).toLowerCase();
     let hash = 0;
@@ -25,6 +26,7 @@
         return normalizeState(result[STORAGE_KEY]);
       } catch (error) {
         if (!isExtensionContextError(error)) throw error;
+        extensionContextInvalid = true;
       }
     }
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -47,6 +49,7 @@
         return normalized;
       } catch (error) {
         if (!isExtensionContextError(error)) throw error;
+        extensionContextInvalid = true;
       }
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
@@ -310,5 +313,9 @@
     };
   }
 
-  root.AIWorkstream = { getState, setState, ingest, updateIdea, demoState, roughScore, attention };
+  function isExtensionContextInvalid() {
+    return extensionContextInvalid;
+  }
+
+  root.AIWorkstream = { getState, setState, ingest, updateIdea, demoState, roughScore, attention, isExtensionContextInvalid };
 })(typeof window !== "undefined" ? window : self);
