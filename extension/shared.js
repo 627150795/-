@@ -10,6 +10,7 @@
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const uid = (prefix) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const compact = (text) => String(text || "").replace(/\s+/g, " ").trim();
+  const isExtensionContextError = (error) => /Extension context invalidated/i.test(String(error?.message || error || ""));
   const fingerprint = (text) => {
     const source = compact(text).toLowerCase();
     let hash = 0;
@@ -19,8 +20,12 @@
 
   async function getState() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const result = await chrome.storage.local.get(STORAGE_KEY);
-      return normalizeState(result[STORAGE_KEY]);
+      try {
+        const result = await chrome.storage.local.get(STORAGE_KEY);
+        return normalizeState(result[STORAGE_KEY]);
+      } catch (error) {
+        if (!isExtensionContextError(error)) throw error;
+      }
     }
     const saved = localStorage.getItem(STORAGE_KEY);
     return normalizeState(saved ? JSON.parse(saved) : null);
@@ -37,10 +42,14 @@
   async function setState(state) {
     const normalized = normalizeState(state);
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.set({ [STORAGE_KEY]: normalized });
-    } else {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+      try {
+        await chrome.storage.local.set({ [STORAGE_KEY]: normalized });
+        return normalized;
+      } catch (error) {
+        if (!isExtensionContextError(error)) throw error;
+      }
     }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     return normalized;
   }
 
