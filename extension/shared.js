@@ -4,7 +4,7 @@
   const EMPTY_STATE = {
     conversations: [],
     ideas: [],
-    settings: { autoCapture: true, useModelAnalyzer: true, minScore: 78, backfillMinScore: 84 }
+    settings: { autoCapture: true, autoHistoryBackfill: true, useModelAnalyzer: true, minScore: 78, backfillMinScore: 84 }
   };
 
   const clone = (value) => JSON.parse(JSON.stringify(value));

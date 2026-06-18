@@ -5,7 +5,11 @@
 
   const AUTO_CAPTURE_DELAY_MS = 8000;
   const AUTO_CAPTURE_MAX_WAIT_MS = 18000;
-  const CAPTURE_VERSION = "0.1.1";
+  const HISTORY_BACKFILL_LIMIT = 20;
+  const HISTORY_BACKFILL_INTERVAL_MS = 10 * 60 * 1000;
+  const HISTORY_BACKFILL_INITIAL_DELAY_MS = 12000;
+  const HISTORY_BACKFILL_LOCK_MS = 2 * 60 * 1000;
+  const CAPTURE_VERSION = "0.1.2";
   const MIN_MESSAGES = 2;
 
   const selectors = {
@@ -37,6 +41,7 @@
   let capturing = false;
   let activityTimer = null;
   let backfilling = false;
+  let historyBackfillTimer = null;
   let stoppedForReload = false;
   let collectorMode = "generic";
 
@@ -47,6 +52,7 @@
   function stopForExtensionReload() {
     stoppedForReload = true;
     clearTimeout(timer);
+    clearTimeout(historyBackfillTimer);
     setProgress(100, "Extension reloaded. Refresh this page", "error");
   }
 
@@ -172,27 +178,35 @@
     }
   }
 
-  async function backfillRecent(limit = 20) {
+  async function backfillRecent(limit = HISTORY_BACKFILL_LIMIT, options = {}) {
     if (shouldStopForExtensionReload()) {
       stopForExtensionReload();
       return;
     }
-    setProgress(0, "Backfill requested", "working");
+    const auto = options.auto === true;
+    setProgress(0, auto ? "Auto history scan queued" : "Backfill requested", "working");
     if (platform !== "ChatGPT") {
       setProgress(100, "Backfill only supports ChatGPT now", "error");
       return;
     }
     if (backfilling) return;
     backfilling = true;
+    let claimed = false;
+    let scanned = 0;
+    let saved = 0;
     try {
+      claimed = await claimHistoryBackfill(auto ? "auto" : "manual", auto);
+      if (!claimed) {
+        setProgress(100, auto ? "History scan already fresh" : "History scan already running", "neutral");
+        return;
+      }
       setProgress(8, "Loading recent chat history", "working");
       const metas = await fetchRecentChatGPTMetas(limit);
       if (!metas.length) {
+        await finishHistoryBackfill({ scanned: 0, saved: 0, status: "empty" });
         setProgress(100, "No history found", "neutral");
         return;
       }
-      let saved = 0;
-      let scanned = 0;
       for (const meta of metas) {
         scanned += 1;
         setProgress(Math.round((scanned / metas.length) * 80) + 10, `Backfill ${scanned}/${metas.length}`, "working");
@@ -213,14 +227,64 @@
         });
         if (result.saved) saved += 1;
       }
+      await finishHistoryBackfill({ scanned, saved, status: "ok" });
       await refreshMiniStats();
       setProgress(100, `Backfill done: ${saved}/${metas.length} ideas`, saved ? "success" : "neutral");
     } catch (error) {
       const message = error?.name === "AbortError" ? "Backfill timed out" : String(error?.message || "Backfill failed");
+      if (claimed) await finishHistoryBackfill({ scanned, saved, status: "error", error: message });
       setProgress(100, message.slice(0, 42), "error");
     } finally {
       backfilling = false;
     }
+  }
+
+  async function claimHistoryBackfill(reason, respectFreshness) {
+    const state = await AIWorkstream.getState();
+    const now = Date.now();
+    const history = state.historyBackfill || {};
+    const runningSince = Date.parse(history.runningSince || "");
+    if (runningSince && now - runningSince < HISTORY_BACKFILL_LOCK_MS) return false;
+    const lastRunAt = Date.parse(history.lastRunAt || "");
+    if (respectFreshness && lastRunAt && now - lastRunAt < HISTORY_BACKFILL_INTERVAL_MS) return false;
+    state.historyBackfill = {
+      ...history,
+      runningSince: new Date(now).toISOString(),
+      lastReason: reason,
+      limit: HISTORY_BACKFILL_LIMIT
+    };
+    await AIWorkstream.setState(state);
+    return true;
+  }
+
+  async function finishHistoryBackfill(result) {
+    const state = await AIWorkstream.getState();
+    state.historyBackfill = {
+      ...(state.historyBackfill || {}),
+      runningSince: null,
+      lastRunAt: new Date().toISOString(),
+      lastStatus: result.status,
+      lastScanned: result.scanned,
+      lastSaved: result.saved,
+      lastError: result.error || null
+    };
+    await AIWorkstream.setState(state);
+  }
+
+  async function maybeAutoBackfillHistory(reason) {
+    if (platform !== "ChatGPT" || backfilling || shouldStopForExtensionReload()) return;
+    const state = await AIWorkstream.getState();
+    if (state.settings.autoHistoryBackfill === false) return;
+    await backfillRecent(HISTORY_BACKFILL_LIMIT, { auto: true, reason });
+  }
+
+  function scheduleHistoryBackfillLoop(delayMs = HISTORY_BACKFILL_INITIAL_DELAY_MS) {
+    if (platform !== "ChatGPT") return;
+    clearTimeout(historyBackfillTimer);
+    historyBackfillTimer = setTimeout(async () => {
+      await maybeAutoBackfillHistory("timer");
+      scheduleHistoryBackfillLoop(HISTORY_BACKFILL_INTERVAL_MS);
+    }, delayMs);
   }
 
   async function fetchRecentChatGPTMetas(limit) {
@@ -428,7 +492,7 @@
     shell.querySelector(".aw-tab").addEventListener("click", () => shell.classList.remove("aw-collapsed"));
     shell.querySelector(".aw-hide").addEventListener("click", () => shell.classList.add("aw-collapsed"));
     shell.querySelector(".aw-primary").addEventListener("click", () => capture("manual"));
-    shell.querySelector(".aw-backfill").addEventListener("click", () => backfillRecent(20));
+    shell.querySelector(".aw-backfill").addEventListener("click", () => backfillRecent(HISTORY_BACKFILL_LIMIT, { auto: false }));
     shell.querySelector(".aw-secondary").addEventListener("click", openDashboard);
     document.body.appendChild(shell);
     refreshMiniStats();
@@ -440,8 +504,12 @@
     scheduleAutoCapture();
   }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   window.addEventListener("visibilitychange", () => {
-    if (!document.hidden) scheduleAutoCapture();
+    if (!document.hidden) {
+      scheduleAutoCapture();
+      maybeAutoBackfillHistory("visible");
+    }
   });
   setTimeout(() => capture("auto"), 2500);
   setTimeout(scheduleAutoCapture, 9000);
+  scheduleHistoryBackfillLoop();
 })();
