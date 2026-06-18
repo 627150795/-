@@ -85,7 +85,6 @@
 }
 
 #ai-workstream-capture .aw-status {
-  margin-top: 12px;
   border-radius: 12px;
   background: #eef0e8;
   padding: 9px 10px;
@@ -98,21 +97,31 @@
 #ai-workstream-capture .aw-status[data-state="success"] { background: #dcebdd; color: #17613e; }
 #ai-workstream-capture .aw-status[data-state="error"] { background: #f1d9d4; color: #8d352e; }
 
-#ai-workstream-capture .aw-progress {
-  height: 6px;
-  margin: 8px 0 2px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #e5e0d3;
+#ai-workstream-capture .aw-status-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
 }
 
-#ai-workstream-capture .aw-progress-fill {
+#ai-workstream-capture .aw-spinner {
   display: block;
-  width: 0%;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #d49a3e, #1f6a43);
-  transition: width .22s ease;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid #ded6c5;
+  border-top-color: #1f6a43;
+  opacity: 0;
+}
+
+#ai-workstream-capture.aw-busy .aw-spinner {
+  opacity: 1;
+  animation: aw-spin .75s linear infinite;
+}
+
+@keyframes aw-spin {
+  to { transform: rotate(360deg); }
 }
 
 #ai-workstream-capture .aw-grid {

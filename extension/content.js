@@ -32,7 +32,7 @@
   let lastSignature = "";
   let lastUrl = location.href;
   let capturing = false;
-  let progressTimer = null;
+  let activityTimer = null;
   let backfilling = false;
 
   function collectMessages() {
@@ -110,6 +110,7 @@
   }
 
   async function backfillRecent(limit = 20) {
+    setProgress(0, "Backfill requested", "working");
     if (platform !== "ChatGPT") {
       setProgress(100, "Backfill only supports ChatGPT now", "error");
       return;
@@ -148,16 +149,17 @@
       await refreshMiniStats();
       setProgress(100, `Backfill done: ${saved}/${metas.length} ideas`, saved ? "success" : "neutral");
     } catch (error) {
-      setProgress(100, "Backfill failed", "error");
+      const message = error?.name === "AbortError" ? "Backfill timed out" : String(error?.message || "Backfill failed");
+      setProgress(100, message.slice(0, 42), "error");
     } finally {
       backfilling = false;
     }
   }
 
   async function fetchRecentChatGPTMetas(limit) {
-    const response = await fetch(`https://chatgpt.com/backend-api/conversations?offset=0&limit=${limit}&order=updated`, {
+    const response = await fetchWithTimeout(`https://chatgpt.com/backend-api/conversations?offset=0&limit=${limit}&order=updated`, {
       credentials: "include"
-    });
+    }, 15000);
     if (!response.ok) throw new Error(`History API ${response.status}`);
     const data = await response.json();
     return (Array.isArray(data.items) ? data.items : [])
@@ -170,9 +172,9 @@
   }
 
   async function fetchChatGPTConversation(id) {
-    const response = await fetch(`https://chatgpt.com/backend-api/conversation/${id}`, {
+    const response = await fetchWithTimeout(`https://chatgpt.com/backend-api/conversation/${id}`, {
       credentials: "include"
-    });
+    }, 15000);
     if (!response.ok) throw new Error(`Conversation API ${response.status}`);
     const raw = await response.json();
     return normalizeChatGPTConversation(raw, id);
@@ -233,6 +235,16 @@
     return "";
   }
 
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async function scheduleAutoCapture() {
     const state = await AIWorkstream.getState();
     if (!state.settings.autoCapture) return;
@@ -247,22 +259,22 @@
 
   function setProgress(percent, text, state) {
     const status = document.querySelector("#ai-workstream-capture .aw-status");
-    const fill = document.querySelector("#ai-workstream-capture .aw-progress-fill");
+    const widget = document.querySelector("#ai-workstream-capture");
     if (status) {
       status.textContent = text;
       status.dataset.state = state;
     }
-    if (fill) fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    clearTimeout(progressTimer);
+    if (widget) widget.classList.toggle("aw-busy", state === "working");
+    clearTimeout(activityTimer);
     if (percent >= 100 && state !== "working") {
-      progressTimer = setTimeout(() => {
+      activityTimer = setTimeout(() => {
         const nextStatus = document.querySelector("#ai-workstream-capture .aw-status");
-        const nextFill = document.querySelector("#ai-workstream-capture .aw-progress-fill");
+        const nextWidget = document.querySelector("#ai-workstream-capture");
         if (nextStatus) {
           nextStatus.textContent = "Watching for page changes";
           nextStatus.dataset.state = "neutral";
         }
-        if (nextFill) nextFill.style.width = "0%";
+        if (nextWidget) nextWidget.classList.remove("aw-busy");
       }, 4500);
     }
   }
@@ -304,10 +316,12 @@
             <strong>AI Workstream</strong>
             <span>${platform} capture</span>
           </div>
-          <button class="aw-hide" type="button" title="Hide">×</button>
+          <button class="aw-hide" type="button" title="Hide">x</button>
         </div>
-        <div class="aw-status" data-state="neutral">Watching for page changes</div>
-        <div class="aw-progress"><i class="aw-progress-fill"></i></div>
+        <div class="aw-status-row">
+          <span class="aw-spinner" aria-hidden="true"></span>
+          <div class="aw-status" data-state="neutral">Watching for page changes</div>
+        </div>
         <div class="aw-grid">
           <div><b class="aw-ideas">0</b><span>Ideas</span></div>
           <div><b class="aw-hot">0</b><span>Hot</span></div>
