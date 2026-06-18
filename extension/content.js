@@ -49,6 +49,8 @@
   }
 
   function collectMessages() {
+    if (platform === "ChatGPT") return collectChatGPTMessages();
+
     const found = [];
     selectors[platform].forEach(({ selector, role }) => {
       document.querySelectorAll(selector).forEach((element) => {
@@ -61,6 +63,38 @@
     return found
       .sort((a, b) => a.order - b.order)
       .filter((item, index, all) => index === 0 || item.text !== all[index - 1].text)
+      .map(({ role, text }) => ({ role, text }));
+  }
+
+  function collectChatGPTMessages() {
+    const roleMessages = Array.from(document.querySelectorAll('[data-message-author-role="user"], [data-message-author-role="assistant"]'))
+      .map((element) => ({
+        role: element.getAttribute("data-message-author-role"),
+        text: element.innerText?.trim() || "",
+        order: element.getBoundingClientRect().top + window.scrollY
+      }))
+      .filter((item) => ["user", "assistant"].includes(item.role) && item.text.length >= 2)
+      .sort((a, b) => a.order - b.order)
+      .filter((item, index, all) => index === 0 || item.role !== all[index - 1].role || item.text !== all[index - 1].text)
+      .map(({ role, text }) => ({ role, text }));
+
+    if (roleMessages.length) return roleMessages;
+    return collectChatGPTFallbackMessages();
+  }
+
+  function collectChatGPTFallbackMessages() {
+    return Array.from(document.querySelectorAll('[data-testid^="conversation-turn-"]'))
+      .map((element) => {
+        const match = String(element.getAttribute("data-testid") || "").match(/conversation-turn-(\d+)/);
+        const turn = Number(match?.[1] || 0);
+        return {
+          role: turn % 2 === 1 ? "user" : "assistant",
+          text: element.innerText?.trim() || "",
+          order: element.getBoundingClientRect().top + window.scrollY
+        };
+      })
+      .filter((item) => item.text.length >= 2)
+      .sort((a, b) => a.order - b.order)
       .map(({ role, text }) => ({ role, text }));
   }
 
